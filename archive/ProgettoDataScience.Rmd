@@ -1,0 +1,337 @@
+```{r librerie-utilizzate, results='hide'}
+#install.packages("tidyverse")
+#install.packages("dplyr")
+#install.packages("leaflet")
+library("dplyr")
+library("tidyverse")
+library("tidyr")
+library("ggplot2")
+library("leaflet")
+```
+
+# Progetto sulle energie rinnovabili in europa
+
+Prendo in analisi la tabella sulle centrali elettriche globali
+
+```{r global-powerPlants-csv, results='hide'}
+global_powerPlants <- read.csv("archive/global_power_plant_database_last.csv")
+```
+
+Siccome viene presa in analisi solo l'europa bisogna creare una tabella con le colonne che ci interessano e aggiungere una colonna dedicata al continente
+per poi essere in grado di osservare solo il continente europeo  
+
+Come prima cosa si procede con il selezionare tramite la funzione _select()_ solo le colonne che ci interessano e poi tramite la funzione _add_column()_ aggiungere la colonna con il continente
+
+```{r aggiunta-riga-continente}
+global_powerPlants <-
+global_powerPlants %>%
+  add_column(continent = NA, .after = 2)%>%
+  select(country, country_long, continent, name, gppd_idnr, capacity_mw, latitude,longitude, primary_fuel, other_fuel1, other_fuel2, other_fuel3)
+```
+
+Adesso nella colonna del continente è da assegnare ad ogni stato il proprio continente di appartenenza. In questo torna utile la libreria _"countrycode"_
+
+```{r results='hide'}
+install.packages("countrycode")
+library("countrycode")
+```
+
+Assegno il continente ad ogni stato.
+
+```{r assegnazione-stato-continente}
+   global_powerPlants$continent <- countrycode(sourcevar = global_powerPlants[['country_long']], origin = 'country.name', destination = 'continent')
+```
+Bisogna correggere il continente d'appartenenza del Kosovo, in questo caso essendo da modificare solamente due valori, per velocità ho usato la funzione _edit()_.
+
+```{r edit del Kosovo}
+global_powerPlants <- edit(global_powerPlants)
+```
+
+Visualizzo il risultato.
+
+```{r }
+global_powerPlants
+```
+Adesso tramite la funzione _filter()_ mantengo solo le centrali situate in europa
+
+```{r filtro delle nazioni europee}
+europe_powerPlants <-
+global_powerPlants%>%
+  filter(continent == "Europe")
+```
+
+Visualizzo il risultato.
+
+```{r }
+europe_powerPlants
+```
+
+# Qual è il tipo più comune di centrale elettrica in europa?
+
+Per capire ciò mi basta fare una tabella con il numero di centrali contando per tipo di alimentazione primaria
+
+```{r conteggio delle centrali}
+europe_powerPlants%>%
+  group_by(primary_fuel)%>%
+  summarise(count = n())%>%
+  arrange(-count)
+```
+
+Visualizzazione  
+
+```{r centrali più comuni}
+ggplot(data=europe_powerPlants, mapping = aes(x = primary_fuel, fill = primary_fuel )) +
+  geom_bar( position = "dodge")+
+  theme(axis.text = element_blank(),axis.text.y = element_text())
+```
+La domande che viene naturale chiedersi è **come mai il numero di centrali solari, eoliche e idroelettriche è cosi alto?** e anche **perchè il numero di centrali a carbone e gas è cosi basso?**  
+Per fare ciò un metodo può essere quello di calcolare la media della capacità in MW di produzione elettrica.
+Il metodo più semplice è quello di creare una tabella composta da due colonne dove la prima (primary_fuel) specifica il tipo di alimentazione della centrale e la seconda (capcity) è la media della produzione elettrica teorica.
+
+```{r produzione media}
+df <- europe_powerPlants %>%
+  group_by(primary_fuel) %>%
+  summarise(capacity = mean(capacity_mw)) %>%
+  arrange(-capacity)
+df
+```
+Visualizzazione
+```{r grafico produzione media}
+ggplot(data=df, mapping = aes(x = primary_fuel, y = capacity, fill = primary_fuel )) +
+  geom_col()+
+  theme(axis.text = element_blank(), axis.text.y = element_text())
+```
+Dal grafico possiamo notare come i tre tipi di centrali elettriche più presenti in europa sono in realtà centrali che di media non producono tanto (ad eccezzione di quelle idroelettriche) se comparate alle altre tipologie di centrali. Quindi le centrali solari, eoliche e idroelettriche sono le 3 tipologie di centrali più comuni proprio perché in media sono in grado di produrre poca elettricità. Da questo grafico però notiamo come le centrali nucleari hanno una capacità produttiva media estremamente elevata rispetto le altre, pur essendo tra le meno presenti.
+
+#Quali tipo di centrali elettriche ci sono in ogni nazione europea?
+```{r grafico presenza centrali}
+ggplot(data = europe_powerPlants,aes(x = country))+
+  geom_bar(aes(fill=primary_fuel),width=0.75)+
+  theme(axis.text.x = element_text(size = 4.3)) 
+```
+#Dove si trovane la varie centrali elettriche in europa?
+Per visualizzare la poszione delle centrali verrà utilizzata la libreria "leaflet" che ci permette di creare mappe interrattive in modo da renderle più "esplorabili" e quindi comprensibili.Siccome ci sarebbero più di 10000 oggetti da visualizzare sulla mappa bisogna trovare un modo più pratico e sopratutto "leggero" per visualizzare le centrali.
+```{r}
+dataFrame <- europe_powerPlants %>%
+  select(name,latitude,longitude,primary_fuel)
+```
+
+```{r mappa centrali}
+fuel_palette <- colorFactor(c("#FF3333","#FF6633","#CC9933","#999933","#339900","#339966","#33CCCC","#0099CC","#0099FF","#6666FF","#9933CC","#CC33CC","#FF66CC"), domain = dataFrame$primary_fuel)
+leaflet() %>%
+  setView(6.93, 48.46, zoom = 5)%>%
+  addTiles()%>%
+  addCircleMarkers(data = dataFrame, lat = ~latitude, lng = ~longitude, popup = ~name, color = ~fuel_palette(dataFrame$primary_fuel), radius = 5, fillOpacity = 0.3)%>%
+  addLegend("bottomright", pal = fuel_palette, values = dataFrame$primary_fuel, opacity = 1)
+```
+#Come si divide la produzione di elettricità?
+Per questa analisi verrà utilizzata un'altra tabella associata sempre a questo dataset e cioè la tabella che rappresenta la percentuale di produzione elettrica divisa per tipo di carburante e nel corso del tempo.  
+```{r share_elecProduc.csv}
+share_elecProduc <- read.csv("archive/share-elec-produc-by-source.csv")
+```
+Prima di procedere con l'analisi però è necessario elaborare la tabella.
+Il metodo è lo stesso della tabella delle centrali elettriche nel mondo, quindi aggiungere una colonna per il continente e creare una seconda tabella con esclusivamente i dati degli stati del continente europeo.
+
+```{r elaborazione tabella produzione elettricità}
+share_elecProduc <- share_elecProduc %>%
+  add_column( continent = NA,.after = 2)
+  share_elecProduc$continent <- countrycode(sourcevar = share_elecProduc[['Entity']], origin = 'country.name', destination = 'continent')
+```
+```{r produzione europea di elettricità}
+europe_shareElecProuc <- share_elecProduc %>% 
+  filter(continent == "Europe") %>% 
+  select(Entity,Code,continent,Year,Coal....electricity.,Gas....electricity.,Hydro....electricity.,Solar....electricity.,Wind....electricity.,Oil....electricity.,Nuclear....electricity.,Other.renewables....electricity.)
+europe_shareElecProuc
+```
+Ora per questioni di praticità verrano cambiati i nomi delle colonne che riportano le percentuali di energia.  
+```{r cambio nome delle colonne}
+europe_shareElecProuc <- europe_shareElecProuc %>%
+  rename(CoalShare = Coal....electricity.,
+         GasShare = Gas....electricity.,
+         HydroShare = Hydro....electricity.,
+         SolarShare = Solar....electricity.,
+         WindShare = Wind....electricity.,
+         OilShare = Oil....electricity.,
+         NuclearShare = Nuclear....electricity.,
+         OtherShare = Other.renewables....electricity.,
+         country = Entity)
+europe_shareElecProuc
+```
+Ora che la tabella è stata ripulita si può procedere con l'analisi dei dati.  
+Prima di fare un'analisi generale è interressante prendere in esame come si sia evoluta la produzione di energia tra nazioni simili prendendo in analisi il periodo che va tra il 1998 e il 2020. La finestra temporale scelta è quella che va dalla firma del protocollo di Kyoto (11 dicembre 1997) fino ai dati più recenti. Guardando anche la mappa con le posizioni delle varie centrali elettriche è interessante notare le sfruttano la morfologia del territorio per gli impianti elettrici con energia green. Per esempio la zona delle Alpi presenta un gran numero di impianti idroelettrici oppure come le zone più pianeggianti della Francia vengono utilizzati per le centrali eoliche.
+```{r}
+eu_prod_df <- subset(europe_shareElecProuc, Year>=1998 & Year<=2020)
+```
+Non potendo fare un'analisi generale di tutta l'europa a causa delle grandi differenze nelle politiche energetiche di ogni stato verrano presi in considerazione come campioni i singoli stati. Come esempi d'analisi sono presi in esame L'Italia, la Spagna, la Francia, la Germania e il regno unito.  
+
+```{r conteggio Italia}
+ggplot(filter(europe_powerPlants,country_long=="Italy"),aes(x = country))+
+  geom_bar(aes(fill=primary_fuel))+
+  facet_wrap(~primary_fuel)+
+  theme(axis.text.x = element_text(size = 1))
+```
+
+```{r Conteggio Spagna}
+ggplot(filter(europe_powerPlants,country_long=="Spain"),aes(x = country))+
+  geom_bar(aes(fill=primary_fuel))+
+  facet_wrap(~primary_fuel)+
+  theme(axis.text.x = element_text(size = 1))
+```
+```{r conteggio Francia}
+ggplot(filter(europe_powerPlants,country_long=="France"),aes(x = country))+
+  geom_bar(aes(fill=primary_fuel))+
+  facet_wrap(~primary_fuel)+
+  theme(axis.text.x = element_text(size = 1))
+```
+```{r conteggio Germania}
+ggplot(filter(europe_powerPlants,country_long=="Germany"),aes(x = country))+
+  geom_bar(aes(fill=primary_fuel))+
+  facet_wrap(~primary_fuel)+
+  theme(axis.text.x = element_text(size = 1))
+```
+```{r conteggio Regno Unito}
+ggplot(filter(europe_powerPlants,country_long=="United Kingdom"),aes(x = country))+
+  geom_bar(aes(fill=primary_fuel))+
+  facet_wrap(~primary_fuel)+
+  theme(axis.text.x = element_text(size = 1))
+```
+
+Il primo stato è l'Italia.
+```{r produzione Italia}
+ggplot(filter(eu_prod_df, country == "Italy"),aes(x = Year ))+
+  geom_line(aes(y = WindShare, colour = "Wind"))+
+  geom_line(aes(y = SolarShare, colour = "Solar"))+
+  geom_line(aes(y = GasShare, colour = "Gas"))+
+  geom_line(aes(y = HydroShare, colour = "Hydro"))+
+  geom_line(aes(y = CoalShare, colour = "Coal"))+
+  geom_line(aes(y = OilShare, colour = "Oil"))+
+  labs(x = "Year", y = "Production(%)", colour = "")+
+  scale_color_manual(values = c("Wind"="#FF66CC", "Solar"="#0099FF", "Gas"="#999933", "Hydro"="#339966","Coal"="#33CCCC","Oil"="#FF3333"))
+```
+Spagna,
+```{r produzione Spagna}
+ggplot(filter(eu_prod_df, country == "Spain"),aes(x = Year ))+
+  geom_line(aes(y = WindShare, colour = "Wind"))+
+  geom_line(aes(y = SolarShare, colour = "Solar"))+
+  geom_line(aes(y = GasShare, colour = "Gas"))+
+  geom_line(aes(y = HydroShare, colour = "Hydro"))+
+  geom_line(aes(y = CoalShare, colour = "Coal"))+
+  geom_line(aes(y = OilShare, colour = "Oil"))+
+  geom_line(aes(y = NuclearShare, colour = "Nuclear"))+
+  labs(x = "Year", y = "Production(%)", colour = "")+
+  scale_color_manual(values = c("Wind"="#FF66CC", "Solar"="#0099FF", "Gas"="#999933", "Hydro"="#339966","Coal"="#33CCCC","Oil"="#FF3333", "Nuclear"="#FF6633"))
+```
+Francia,
+```{r produzione Francia}
+ggplot(filter(eu_prod_df, country == "France"),aes(x = Year ))+
+  geom_line(aes(y = WindShare, colour = "Wind"))+
+  geom_line(aes(y = SolarShare, colour = "Solar"))+
+  geom_line(aes(y = GasShare, colour = "Gas"))+
+  geom_line(aes(y = HydroShare, colour = "Hydro"))+
+  geom_line(aes(y = CoalShare, colour = "Coal"))+
+  geom_line(aes(y = OilShare, colour = "Oil"))+
+  geom_line(aes(y = NuclearShare, colour = "Nuclear"))+
+  labs(x = "Year", y = "Production(%)", colour = "")+
+  scale_color_manual(values = c("Wind"="#FF66CC", "Solar"="#0099FF", "Gas"="#999933", "Hydro"="#339966","Coal"="#33CCCC","Oil"="#FF3333","Nuclear"="#FF6633"))
+```
+
+Germania,
+```{r produzione Germania}
+ggplot(filter(eu_prod_df, country == "Germany"),aes(x = Year ))+
+  geom_line(aes(y = WindShare, colour = "Wind"))+
+  geom_line(aes(y = SolarShare, colour = "Solar"))+
+  geom_line(aes(y = GasShare, colour = "Gas"))+
+  geom_line(aes(y = HydroShare, colour = "Hydro"))+
+  geom_line(aes(y = CoalShare, colour = "Coal"))+
+  geom_line(aes(y = OilShare, colour = "Oil"))+
+  geom_line(aes(y = NuclearShare, colour = "Nuclear"))+
+  labs(x = "Year", y = "Production(%)", colour = "")+
+  scale_color_manual(values = c("Wind"="#FF66CC", "Solar"="#0099FF", "Gas"="#999933", "Hydro"="#339966","Coal"="#33CCCC","Oil"="#FF3333","Nuclear"="#FF6633"))
+```
+
+Uk
+```{r produzione Uk}
+ggplot(filter(eu_prod_df, country == "United Kingdom"),aes(x = Year ))+
+  geom_line(aes(y = WindShare, colour = "Wind"))+
+  geom_line(aes(y = SolarShare, colour = "Solar"))+
+  geom_line(aes(y = GasShare, colour = "Gas"))+
+  geom_line(aes(y = HydroShare, colour = "Hydro"))+
+  geom_line(aes(y = CoalShare, colour = "Coal"))+
+  geom_line(aes(y = OilShare, colour = "Oil"))+
+  geom_line(aes(y = NuclearShare, colour = "Nuclear"))+
+  labs(x = "Year", y = "Production(%)", colour = "")+
+  scale_color_manual(values = c("Wind"="#FF66CC", "Solar"="#0099FF", "Gas"="#999933", "Hydro"="#339966","Coal"="#33CCCC","Oil"="#FF3333","Nuclear"="#FF6633"))
+```
+Ogni grafico visualizza in modo chiaro come questi stati hanno gestito nel tempo la transizione per la produzione di energie rinnovabili.  
+#Quanto è variato il consumo di energia?
+Il procedimento è simile a quello dell'analisi precedente  quindi esaminare un'altra tabella sempre dello stesso dataset ma che questa volta analizza il consumo di elettricità. La particolarità di questa tabella è che viene fornita già con la divisione tra energie rinnovabili, fossili e derivanti dal Nucleare. Questo grafico ci aiuta meglio a capire gli sforzi da parte delle nazioni dopo il protocollo di Kyoto e gli accordi di parigi.
+```{r importazione tabella}
+energy_consumption <- read.csv("archive/Primary-energy-consumption-from-fossilfuels-nuclear-renewables.csv")
+```
+
+```{r elaborazione tabella consumo elettricità}
+energy_consumption <- energy_consumption %>%
+  add_column( continent = NA,.after = 2)
+  energy_consumption$continent <- countrycode(sourcevar = energy_consumption[['Entity']], origin = 'country.name', destination = 'continent')
+energy_consumption
+```
+```{r cambio nome colonne}
+europe_enerConsumption <- energy_consumption %>% 
+  filter(continent == "Europe") %>%
+  rename(FossilFuels = Fossil.fuels....sub.energy.,
+         RenewablesSources = Renewables....sub.energy.,
+         NuclearEnergy = Nuclear....sub.energy.,
+         country = Entity)
+europe_enerConsumption
+```
+Ora si procede con la costruzione dei grafici relativi alle nazioni prese in analisi prima con lo stesso intervallo temporale.
+```{r}
+eu_consum_df <- filter(europe_enerConsumption, Year>=1998 & Year <= 2020)
+eu_consum_df
+```
+Italia
+```{r consumo Italia}
+ggplot(filter(eu_consum_df, country == "Italy"),aes(x = Year ))+
+  geom_line(aes(y = FossilFuels, colour = "Fossil Fuels"))+
+  geom_line(aes(y = RenewablesSources, colour = "Renewables Sources"))+
+  geom_line(aes(y = NuclearEnergy, colour = "Nuclear Energy"))+
+  labs(x = "Year", y = "Consumption(%)", colour = "")+
+  scale_color_manual(values = c("Fossil Fuels"="#FF66CC", "Renewables Sources"="#339966","Nuclear Energy"="#FF3333"))
+```
+Spagna
+```{r consumo Spagna}
+ggplot(filter(eu_consum_df, country == "Spain"),aes(x = Year ))+
+  geom_line(aes(y = FossilFuels, colour = "Fossil Fuels"))+
+  geom_line(aes(y = RenewablesSources, colour = "Renewables Sources"))+
+  geom_line(aes(y = NuclearEnergy, colour = "Nuclear Energy"))+
+  labs(x = "Year", y = "Consumption(%)", colour = "")+
+  scale_color_manual(values = c("Fossil Fuels"="#FF66CC", "Renewables Sources"="#339966","Nuclear Energy"="#FF3333"))
+```
+Francia
+```{r consumo Francia}
+ggplot(filter(eu_consum_df, country == "France"),aes(x = Year ))+
+  geom_line(aes(y = FossilFuels, colour = "Fossil Fuels"))+
+  geom_line(aes(y = RenewablesSources, colour = "Renewables Sources"))+
+  geom_line(aes(y = NuclearEnergy, colour = "Nuclear Energy"))+
+  labs(x = "Year", y = "Consumption(%)", colour = "")+
+  scale_color_manual(values = c("Fossil Fuels"="#FF66CC", "Renewables Sources"="#339966","Nuclear Energy"="#FF3333"))
+```
+Germania
+```{r consumo Germania}
+ggplot(filter(eu_consum_df, country == "Germany"),aes(x = Year ))+
+  geom_line(aes(y = FossilFuels, colour = "Fossil Fuels"))+
+  geom_line(aes(y = RenewablesSources, colour = "Renewables Sources"))+
+  geom_line(aes(y = NuclearEnergy, colour = "Nuclear Energy"))+
+  labs(x = "Year", y = "Consumption(%)", colour = "")+
+  scale_color_manual(values = c("Fossil Fuels"="#FF66CC", "Renewables Sources"="#339966","Nuclear Energy"="#FF3333"))
+```
+UK
+```{r consumo UK}
+ggplot(filter(eu_consum_df, country == "United Kingdom"),aes(x = Year ))+
+  geom_line(aes(y = FossilFuels, colour = "Fossil Fuels"))+
+  geom_line(aes(y = RenewablesSources, colour = "Renewables Sources"))+
+  geom_line(aes(y = NuclearEnergy, colour = "Nuclear Energy"))+
+  labs(x = "Year", y = "Consumption(%)", colour = "")+
+  scale_color_manual(values = c("Fossil Fuels"="#FF66CC", "Renewables Sources"="#339966","Nuclear Energy"="#FF3333"))
+```
+
