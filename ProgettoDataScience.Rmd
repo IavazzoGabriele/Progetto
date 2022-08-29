@@ -14,7 +14,7 @@ library("leaflet")
 Prendo in analisi la tabella sulle centrali elettriche globali
 
 ```{r global-powerPlants-csv, results='hide'}
-global_powerPlants <- read.csv("../archive/global_power_plant_database_last.csv")
+global_powerPlants <- read.csv("archive/global_power_plant_database_last.csv")
 ```
 
 Siccome viene presa in analisi solo l'europa bisogna creare una tabella con le colonne che ci interessano e aggiungere una colonna dedicata al continente
@@ -127,7 +127,7 @@ leaflet() %>%
 #Come si divide la produzione di elettricità?
 Per questa analisi verrà utilizzata un'altra tabella associata sempre a questo dataset e cioè la tabella che rappresenta la percentuale di produzione elettrica divisa per tipo di carburante e nel corso del tempo.  
 ```{r share_elecProduc.csv}
-share_elecProduc <- read.csv("../archive/share-elec-produc-by-source.csv")
+share_elecProduc <- read.csv("archive/share-elec-produc-by-source.csv")
 ```
 Prima di procedere con l'analisi però è necessario elaborare la tabella.
 Il metodo è lo stesso della tabella delle centrali elettriche nel mondo, quindi aggiungere una colonna per il continente e creare una seconda tabella con esclusivamente i dati degli stati del continente europeo.
@@ -266,7 +266,7 @@ Ogni grafico visualizza in modo chiaro come questi stati hanno gestito nel tempo
 #Quanto è variato il consumo di energia?
 Il procedimento è simile a quello dell'analisi precedente  quindi esaminare un'altra tabella sempre dello stesso dataset ma che questa volta analizza il consumo di elettricità. La particolarità di questa tabella è che viene fornita già con la divisione tra energie rinnovabili, fossili e derivanti dal Nucleare. Questo grafico ci aiuta meglio a capire gli sforzi da parte delle nazioni dopo il protocollo di Kyoto e gli accordi di parigi.
 ```{r importazione tabella}
-energy_consumption <- read.csv("../archive/Primary-energy-consumption-from-fossilfuels-nuclear-renewables.csv")
+energy_consumption <- read.csv("archive/Primary-energy-consumption-from-fossilfuels-nuclear-renewables.csv")
 ```
 
 ```{r elaborazione tabella consumo elettricità}
